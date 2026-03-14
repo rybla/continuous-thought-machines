@@ -10,6 +10,8 @@ from PIL import Image
 from datasets import load_dataset
 import json
 
+from tasks.piet1.common import Direction
+
 
 class SortDataset(Dataset):
     def __init__(self, N):
@@ -160,7 +162,7 @@ class ImageNet(Dataset):
 
     def __getitem__(self, idx):
         data_item = self.base_dataset[idx]
-        image = self.transform(data_item["image"].convert("RGB"))
+        image = self.transform(data_item["image"].convert("RGB"))  # type: ignore
         target = data_item["label"]
         return image, target
 
@@ -366,33 +368,6 @@ class MazeImageFolder(ImageFolder):
 # ------------------------------------------------------------------------------
 
 
-type Direction = Literal[0, 1, 2, 3]
-
-# these are the same directions used as the classes for the maze class
-direction_up: Direction = 0
-direction_down: Direction = 1
-direction_left: Direction = 2
-direction_right: Direction = 3
-
-
-# ------------------------------------------------------------------------------
-
-
-piet1_up_class = direction_up
-piet1_down_class = direction_down
-piet1_left_class = direction_left
-piet1_right_class = direction_right
-piet1_wait_class = 4
-
-
-piet1_bg_color = (0, 0, 0)
-piet1_start_color = (0, 255, 0)
-piet1_startDirection_color = (0, 255, 255)
-piet1_left_color = (255, 0, 0)
-piet1_right_color = (0, 0, 255)
-piet1_end_color = (255, 255, 255)
-
-
 class Piet1ImageFolder(ImageFolder):
     def __init__(
         self,
@@ -494,6 +469,7 @@ class Piet1ImageFolder(ImageFolder):
                 which_rot = random.choice([-1, 1])
                 sample = np.rot90(sample, k=which_rot, axes=(0, 1))
                 for pi in range(len(path)):
+                    # TODO: use constant defs of directions
                     if path[pi] == 0:
                         path[pi] = 3 if which_rot == -1 else 2
                     elif path[pi] == 1:

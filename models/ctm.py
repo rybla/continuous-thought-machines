@@ -94,7 +94,7 @@ class ContinuousThoughtMachine(nn.Module, PyTorchModelHubMixin):
                  positional_embedding_type,
                  out_dims,
                  prediction_reshaper=[-1],
-                 dropout=0,
+                 dropout=0.0,
                  dropout_nlm=None,
                  neuron_select_type='random-pairing',  
                  n_random_pairing_self=0,
