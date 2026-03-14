@@ -1,3 +1,5 @@
+from typing import List, Literal
+
 import torch
 from torchvision.datasets import ImageFolder
 from torch.utils.data import Dataset
@@ -6,6 +8,7 @@ import numpy as np
 from tqdm.auto import tqdm
 from PIL import Image
 from datasets import load_dataset
+import json
 
 
 class SortDataset(Dataset):
@@ -360,16 +363,34 @@ class MazeImageFolder(ImageFolder):
         return (sample * 2) - 1, (target)
 
 
-piet1_right_class = 0
-piet1_up_class = 1
-piet1_left_class = 2
-piet1_down_class = 3
+# ------------------------------------------------------------------------------
 
+
+type Direction = Literal[0, 1, 2, 3]
+
+# these are the same directions used as the classes for the maze class
+direction_up: Direction = 0
+direction_down: Direction = 1
+direction_left: Direction = 2
+direction_right: Direction = 3
+
+
+# ------------------------------------------------------------------------------
+
+
+piet1_up_class = direction_up
+piet1_down_class = direction_down
+piet1_left_class = direction_left
+piet1_right_class = direction_right
+piet1_wait_class = 4
+
+
+piet1_bg_color = (0, 0, 0)
 piet1_start_color = (0, 255, 0)
 piet1_startDirection_color = (0, 255, 255)
-piet1_left_color = (255, 255, 0)
-piet1_right_color = (255, 0, 255)
-piet1_end_color = (255, 0, 0)
+piet1_left_color = (255, 0, 0)
+piet1_right_color = (0, 0, 255)
+piet1_end_color = (255, 255, 255)
 
 
 class Piet1ImageFolder(ImageFolder):
@@ -382,7 +403,6 @@ class Piet1ImageFolder(ImageFolder):
         is_valid_file=None,
         which_set="train",
         augment_p=0.5,
-        program_route_length=10,
         trunc=False,
         expand_range=True,
     ):
@@ -391,171 +411,69 @@ class Piet1ImageFolder(ImageFolder):
         )
         self.which_set = which_set
         self.augment_p = augment_p
-        self.program_route_length = program_route_length
+        self.program_route_length: int | None = None
         self.all_paths = {}
         self.trunc = trunc
         self.expand_range = expand_range
 
         self._preload()
-        print("Solving all programs...")
-        for index in range(len(self.preloaded_samples)):
-            path = self.get_solution(self.preloaded_samples[index])
-            self.all_paths[index] = path
 
     def _preload(self):
-        preloaded_samples = []
-        preloaded_paths = []
+        preloaded_samples: List[np.typing.NDArray[np.float64]] = []
+
+        sample_size: int | None = None
+        path_length: int | None = None
+
         with tqdm(
             total=self.__len__(), initial=0, leave=True, position=0, dynamic_ncols=True
         ) as pbar:
             for index in range(self.__len__()):
                 pbar.set_description("Loading programs")
-                path, target = self.samples[index]
-                sample = self.loader(path)
-                sample = np.array(sample).astype(np.float32) / 255
+                filepath, target = self.samples[index]
+
+                # load sample image as array of pixels
+                sample = self.loader(filepath)
+                sample: np.typing.NDArray[np.float64] = (
+                    np.array(sample).astype(np.float32) / 255
+                )
                 preloaded_samples.append(sample)
 
-                # TODO: load path from path.replace(".png", ".pkl")
-                preloaded_paths.append(TODO)
+                if sample_size is None:
+                    sample_size = len(sample)
+                else:
+                    assert sample_size == len(
+                        sample
+                    ), f"Samples do not have the same size. For example, sample {preloaded_samples[0]} has size {sample_size}, but sample {sample} has size {len(sample)}"
+
+                # load solution path as array of steps
+                path_filepath = filepath.replace(".png", ".json")
+                with open(path_filepath, "r+") as file:
+                    data = json.load(file)
+                    assert isinstance(data, List)
+                    assert isinstance(data[0], int)
+                    path: List[Direction] = data
+                if path_length is None:
+                    path_length = len(path)
+                else:
+                    assert path_length == len(
+                        path
+                    ), f"Paths do not have the same size. For example, path {self.all_paths[0]} has length {path_length}, but path {path} has length {len(path)}."
+                self.all_paths[index] = path
+
+                if self.program_route_length is None:
+                    self.program_route_length = len(path)
 
                 pbar.update(1)
                 if self.trunc and index == 999:
                     break
+
         self.preloaded_samples = preloaded_samples
-        self.preloaded_paths = preloaded_paths
 
     def __len__(self):
         if hasattr(self, "preloaded_samples") and self.preloaded_samples is not None:
             return len(self.preloaded_samples)
         else:
             return super().__len__()
-
-    def get_solution(self, x):
-        """
-        Solve a program
-        """
-
-        classes_count = 4
-        """
-        classification classes options count
-        """
-
-        """
-        
-        Notes:
-        - "up" is negative y direction
-        - "right" is position x direction
-        - direction classes are in clockwise order, mod 4
-
-        """
-
-        x = np.copy(x)
-
-        # Find important position
-
-        start_pos: tuple[int, int] = tuple(
-            np.argwhere((x == piet1_start_color).all(axis=2)).tolist()
-        )
-        assert len(start_pos) == 2, f"Invalid start: {start_pos}"
-
-        startDirection_pos: tuple[int, int] = tuple(
-            np.argwhere((x == piet1_startDirection_color).all(axis=2)).tolist()
-        )
-        assert (
-            len(startDirection_pos) == 2
-        ), f"Invalid startDirection: {startDirection_pos}"
-
-        end_pos: tuple[int, int] = tuple(
-            np.argwhere((x == piet1_end_color).all(axis=2)).tolist()
-        )
-        assert len(end_pos) == 2, f"Invalid end: {end_pos}"
-
-        current_pos = start_pos
-
-        def diff_pos(p1: tuple[int, int], p2: tuple[int, int]) -> tuple[int, int]:
-            """
-            p1 - p2
-            """
-
-            return (p1[0] - p2[0], p1[1] - p2[1])
-
-        def at(p):
-            return x[p[0], p[1]]
-
-        # Determine starting direction
-
-        startDirection_diff = diff_pos(startDirection_pos, start_pos)
-
-        if startDirection_diff == (1, 0):
-            current_dir = piet1_right_class
-        elif startDirection_diff == (0, -1):
-            current_dir = piet1_up_class
-        elif startDirection_diff == (-1, 0):
-            current_dir = piet1_left_class
-        elif startDirection_diff == (0, 1):
-            current_dir = piet1_right_class
-        else:
-            assert False, f"Invalid startDirectionDir: {startDirection_diff}"
-
-        path = [classes_count] * self.program_route_length
-        i = 0
-
-        def turn_left():
-            nonlocal current_dir
-            current_dir = (current_dir + 1) % 4
-
-        def turn_right():
-            nonlocal current_dir
-            current_dir = (current_dir - 1) % 4
-
-        def update():
-            """
-            Updates state based on rules for current position's color.
-            """
-
-            current_color = at(current_pos)
-
-            # check current position to update direction
-            if current_color == piet1_left_color:
-                turn_left()
-            elif current_color == piet1_right_color:
-                turn_right()
-            else:
-                # don't update direction
-                pass
-
-        def move():
-            """
-            Moves according to state, and records movement in path.
-            """
-
-            nonlocal current_pos
-
-            path[i] = current_dir
-
-            x, y = current_pos
-
-            if current_dir == piet1_right_class:
-                current_pos = (x + 1, y)
-            elif current_dir == piet1_up_class:
-                current_pos = (x, y - 1)
-            elif current_dir == piet1_left_class:
-                current_pos = (x - 1, y)
-            elif current_dir == piet1_down_class:
-                current_pos = (x, y + 1)
-            else:
-                assert False, f"Invalid current_dir: {current_dir}"
-
-        while current_pos != end_pos:
-            update()
-            move()
-
-            i += 1
-
-            if i == len(path):
-                break
-
-        return np.array(path)
 
     def __getitem__(self, index):
         """
@@ -605,6 +523,7 @@ class Piet1ImageFolder(ImageFolder):
 
         sample = torch.from_numpy(np.copy(sample)).permute(2, 0, 1)
 
+        # TODO: remove all blue mask stuff
         blue_mask = (sample[0] == 0) & (sample[1] == 0) & (sample[2] == 1)
 
         sample[:, blue_mask] = 1
@@ -614,6 +533,9 @@ class Piet1ImageFolder(ImageFolder):
             return sample, target
 
         return (sample * 2) - 1, (target)
+
+
+# ------------------------------------------------------------------------------
 
 
 class ParityDataset(Dataset):
