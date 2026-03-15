@@ -4,7 +4,7 @@ import numpy as np
 import math
 from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
 
-from models.modules import ParityBackbone, SynapseUNET, Squeeze, SuperLinear, LearnableFourierPositionalEncoding, MultiLearnableFourierPositionalEncoding, CustomRotationalEmbedding, CustomRotationalEmbedding1D, ShallowWide
+from models.modules import HistoryGate, ParityBackbone, SynapseUNET, Squeeze, SuperLinear, LearnableFourierPositionalEncoding, MultiLearnableFourierPositionalEncoding, CustomRotationalEmbedding, CustomRotationalEmbedding1D, ShallowWide
 from models.resnet import prepare_resnet_backbone
 from models.utils import compute_normalized_entropy
 
@@ -131,6 +131,8 @@ class ContinuousThoughtMachine(nn.Module, PyTorchModelHubMixin):
         # --- Core CTM Modules ---
         self.synapses = self.get_synapses(synapse_depth, d_model, dropout)
         self.trace_processor = self.get_neuron_level_models(deep_nlms, do_layernorm_nlm, memory_length, memory_hidden_dims, d_model, dropout_nlm)
+        # NEW module for history gate
+        self.history_gate = HistoryGate(d_model, memory_length)
 
         #  --- Start States ---
         self.register_parameter('start_activated_state', nn.Parameter(torch.zeros((d_model)).uniform_(-math.sqrt(1/(d_model)), math.sqrt(1/(d_model)))))
@@ -570,8 +572,18 @@ class ContinuousThoughtMachine(nn.Module, PyTorchModelHubMixin):
 
             # --- Apply Synapses ---
             state = self.synapses(pre_synapse_input)
+
+            # OLD: FIFO update history
             # The 'state_trace' is the history of incoming pre-activations
             state_trace = torch.cat((state_trace[:, :, 1:], state.unsqueeze(-1)), dim=-1)
+
+            # NEW: apply history gate
+            # Compute the standard FIFO candidate update
+            candidate_trace = torch.cat((state_trace[:, :, 1:], state.unsqueeze(-1)), dim=-1)
+            # Compute the retention gate (0 = use candidate, 1 = keep old state)
+            retain_gate = self.history_gate(state_trace, state)
+            # Apply the gate to mix the old trace and the new candidate trace
+            state_trace = (retain_gate * state_trace) + ((1.0 - retain_gate) * candidate_trace)
 
             # --- Apply Neuron-Level Models ---
             activated_state = self.trace_processor(state_trace)
