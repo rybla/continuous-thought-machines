@@ -499,10 +499,8 @@ class Piet1ImageFolder(ImageFolder):
 
         sample = torch.from_numpy(np.copy(sample)).permute(2, 0, 1)
 
-        # TODO: remove all blue mask stuff
-        blue_mask = (sample[0] == 0) & (sample[1] == 0) & (sample[2] == 1)
+        # NOTE: Blue mask was removed since it's used for something else in Piet1. No masks are necessary.
 
-        sample[:, blue_mask] = 1
         target = path
 
         if not self.expand_range:

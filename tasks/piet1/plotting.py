@@ -7,6 +7,17 @@ import imageio
 
 from tqdm.auto import tqdm
 
+from .common import (
+    Direction,
+    Action,
+    bg_color_np,
+    end_color_np,
+    left_color_np,
+    right_color_np,
+    start_color_np,
+    startDirection_color_np,
+)
+
 
 def find_center_of_mass(array_2d):
     """
@@ -34,18 +45,19 @@ def draw_path(x, route, valid_only=False, gt=False, cmap=None):
     Draws a path on a piet1 image based on a given route.
 
     Args:
-        piet1: A numpy array representing the piet1 image.
+        x: A numpy array representing the piet1 image.
         route: A list of integers representing the route, where 0 is up, 1 is down, 2 is left, and 3 is right.
-        valid_only: A boolean indicating whether to only draw valid steps (i.e., steps that don't go into walls).
+        valid_only (deprecated): A boolean indicating whether to only draw valid steps (i.e., steps that don't go into walls).
 
     Returns:
         A numpy array representing the piet1 image with the path drawn in blue.
     """
     x = np.copy(x)
-    start = np.argwhere((x == [1, 0, 0]).all(axis=2))
-    end = np.argwhere((x == [0, 1, 0]).all(axis=2))
+    print(f"x = {x}")
+    start = np.argwhere((x == start_color_np).all(axis=2))
+    end = np.argwhere((x == end_color_np).all(axis=2))
     if cmap is None:
-        cmap = plt.get_cmap("winter") if not valid_only else plt.get_cmap("summer")
+        cmap = plt.get_cmap("winter")
 
     # Initialize the current position
     current_pos = start[0]
@@ -55,26 +67,18 @@ def draw_path(x, route, valid_only=False, gt=False, cmap=None):
     si = 0
     for step in route:
         new_pos = current_pos
-        if step == 0:  # Up
+        if step == Action.UP:  # Up
             new_pos = (current_pos[0] - 1, current_pos[1])
-        elif step == 1:  # Down
+        elif step == Action.DOWN:  # Down
             new_pos = (current_pos[0] + 1, current_pos[1])
-        elif step == 2:  # Left
+        elif step == Action.LEFT:  # Left
             new_pos = (current_pos[0], current_pos[1] - 1)
-        elif step == 3:  # Right
+        elif step == Action.RIGHT:  # Right
             new_pos = (current_pos[0], current_pos[1] + 1)
-        elif step == 4:  # Do nothing
+        elif step == Action.WAIT:  # Do nothing
             pass
         else:
             raise ValueError("Invalid step: {}".format(step))
-
-        # Check if the new position is valid
-        if valid_only:
-            try:
-                if np.all(x[new_pos] == [0, 0, 0]):  # Check if it's a wall
-                    continue  # Skip this step if it's invalid
-            except IndexError:
-                continue  # Skip this step if it's out of bounds
 
         # Draw the step
         if (
@@ -83,14 +87,16 @@ def draw_path(x, route, valid_only=False, gt=False, cmap=None):
             and new_pos[1] >= 0
             and new_pos[1] < x.shape[1]
         ):
-            if not ((x[new_pos] == [1, 0, 0]).all() or (x[new_pos] == [0, 1, 0]).all()):
+            if not (
+                (x[new_pos] == start_color_np).all()
+                or (x[new_pos] == end_color_np).all()
+            ):
                 colour = colors[si][:3]
                 si += 1
                 x[new_pos] = x[new_pos] * 0.5 + colour * 0.5
 
         # Update the current position
         current_pos = new_pos
-        # cv2.imwrite('piet12.png', x[:,:,::-1]*255)
 
     return x
 
@@ -103,7 +109,6 @@ def make_piet1_gif(
     """
     route_steps = []
     route_colours = []
-    solution_piet1 = draw_path(np.moveaxis(inputs, 0, -1), targets)
 
     n_heads = attention_tracking.shape[1]
     mosaic = [
@@ -294,7 +299,9 @@ def make_piet1_gif(
 
     route_steps = [
         np.unravel_index(
-            np.argmax((inputs == np.reshape(np.array([1, 0, 0]), (3, 1, 1))).all(0)),
+            np.argmax(
+                (inputs == np.reshape(np.array(start_color_np), (3, 1, 1))).all(0)
+            ),
             inputs.shape[1:],
         )
     ]  # Starting point

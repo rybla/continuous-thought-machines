@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Literal
 
+import numpy as np
+
 # ------------------------------------------------------------------------------
 # Direction
 
@@ -26,6 +28,8 @@ class Action(int, Enum):
     WAIT = 4
 
 
+action_types_count = 5
+
 # ------------------------------------------------------------------------------
 # Colors
 
@@ -37,10 +41,15 @@ left_color = (255, 0, 0)
 right_color = (0, 0, 255)
 end_color = (255, 255, 255)
 
+bg_color_np = np.array(bg_color).astype(np.float32) / 255
+start_color_np = np.array(start_color).astype(np.float32) / 255
+startDirection_color_np = np.array(startDirection_color).astype(np.float32) / 255
+left_color_np = np.array(left_color).astype(np.float32) / 255
+right_color_np = np.array(right_color).astype(np.float32) / 255
+end_color_np = np.array(end_color).astype(np.float32) / 255
+
 
 # ------------------------------------------------------------------------------
 # Config
 
-max_steps_count = 50
-action_types_count = 5
-action_steps_count = 30
+actions_count = 30
