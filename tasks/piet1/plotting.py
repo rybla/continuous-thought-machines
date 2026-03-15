@@ -53,7 +53,6 @@ def draw_path(x, route, valid_only=False, gt=False, cmap=None):
         A numpy array representing the piet1 image with the path drawn in blue.
     """
     x = np.copy(x)
-    print(f"x = {x}")
     start = np.argwhere((x == start_color_np).all(axis=2))
     end = np.argwhere((x == end_color_np).all(axis=2))
     if cmap is None:
