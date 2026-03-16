@@ -10,7 +10,7 @@ from PIL import Image
 from datasets import load_dataset
 import json
 
-from tasks.piet1.common import Direction
+import tasks.piet1.common as piet1
 
 
 class SortDataset(Dataset):
@@ -426,7 +426,7 @@ class Piet1ImageFolder(ImageFolder):
                     data = json.load(file)
                     assert isinstance(data, List)
                     assert isinstance(data[0], int)
-                    path: List[Direction] = data
+                    path: List[piet1.Direction] = data
                 if path_length is None:
                     path_length = len(path)
                 else:
@@ -500,6 +500,151 @@ class Piet1ImageFolder(ImageFolder):
         sample = torch.from_numpy(np.copy(sample)).permute(2, 0, 1)
 
         # NOTE: Blue mask was removed since it's used for something else in Piet1. No masks are necessary.
+
+        target = path
+
+        if not self.expand_range:
+            return sample, target
+
+        return (sample * 2) - 1, (target)
+
+
+# ------------------------------------------------------------------------------
+
+
+# TODO: actually define how this is different from Piet1
+class Piet2ImageFolder(ImageFolder):
+    def __init__(
+        self,
+        root,
+        transform=None,
+        target_transform=None,
+        loader=Image.open,
+        is_valid_file=None,
+        which_set="train",
+        augment_p=0.5,
+        trunc=False,
+        expand_range=True,
+    ):
+        super(Piet2ImageFolder, self).__init__(
+            root, transform, target_transform, loader, is_valid_file
+        )
+        self.which_set = which_set
+        self.augment_p = augment_p
+        self.program_route_length: int | None = None
+        self.all_paths = {}
+        self.trunc = trunc
+        self.expand_range = expand_range
+
+        self._preload()
+
+    def _preload(self):
+        preloaded_samples: List[np.typing.NDArray[np.float64]] = []
+
+        sample_size: int | None = None
+        path_length: int | None = None
+
+        with tqdm(
+            total=self.__len__(), initial=0, leave=True, position=0, dynamic_ncols=True
+        ) as pbar:
+            for index in range(self.__len__()):
+                pbar.set_description("Loading programs")
+                filepath, target = self.samples[index]
+
+                # load sample image as array of pixels
+                sample = self.loader(filepath)
+                sample: np.typing.NDArray[np.float64] = (
+                    np.array(sample).astype(np.float32) / 255
+                )
+                preloaded_samples.append(sample)
+
+                if sample_size is None:
+                    sample_size = len(sample)
+                else:
+                    assert sample_size == len(
+                        sample
+                    ), f"Samples do not have the same size. For example, sample {preloaded_samples[0]} has size {sample_size}, but sample {sample} has size {len(sample)}"
+
+                # load solution path as array of steps
+                path_filepath = filepath.replace(".png", ".json")
+                with open(path_filepath, "r+") as file:
+                    data = json.load(file)
+                    assert isinstance(data, List)
+                    assert isinstance(data[0], int)
+                    path: List[piet1.Direction] = data
+                if path_length is None:
+                    path_length = len(path)
+                else:
+                    assert path_length == len(
+                        path
+                    ), f"Paths do not have the same size. For example, path {self.all_paths[0]} has length {path_length}, but path {path} has length {len(path)}."
+                self.all_paths[index] = path
+
+                if self.program_route_length is None:
+                    self.program_route_length = len(path)
+
+                pbar.update(1)
+                if self.trunc and index == 999:
+                    break
+
+        self.preloaded_samples = preloaded_samples
+
+    def __len__(self):
+        if hasattr(self, "preloaded_samples") and self.preloaded_samples is not None:
+            return len(self.preloaded_samples)
+        else:
+            return super().__len__()
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+
+        sample = np.copy(self.preloaded_samples[index])
+
+        path = np.copy(self.all_paths[index])
+
+        if self.which_set == "train":
+            # Randomly rotate -90 or +90 degrees
+            if random.random() < self.augment_p:
+                which_rot = random.choice([-1, 1])
+                sample = np.rot90(sample, k=which_rot, axes=(0, 1))
+                for pi in range(len(path)):
+                    # TODO: use constant defs of directions
+                    if path[pi] == 0:
+                        path[pi] = 3 if which_rot == -1 else 2
+                    elif path[pi] == 1:
+                        path[pi] = 2 if which_rot == -1 else 3
+                    elif path[pi] == 2:
+                        path[pi] = 0 if which_rot == -1 else 1
+                    elif path[pi] == 3:
+                        path[pi] = 1 if which_rot == -1 else 0
+
+            # Random horizontal flip
+            if random.random() < self.augment_p:
+                sample = np.fliplr(sample)
+                for pi in range(len(path)):
+                    if path[pi] == 2:
+                        path[pi] = 3
+                    elif path[pi] == 3:
+                        path[pi] = 2
+
+            # Random vertical flip
+            if random.random() < self.augment_p:
+                sample = np.flipud(sample)
+                for pi in range(len(path)):
+                    if path[pi] == 0:
+                        path[pi] = 1
+                    elif path[pi] == 1:
+                        path[pi] = 0
+
+        sample = torch.from_numpy(np.copy(sample)).permute(2, 0, 1)
+
+        # NOTE: Blue mask was removed since it's used for something else in Piet2. No masks are necessary.
 
         target = path
 
