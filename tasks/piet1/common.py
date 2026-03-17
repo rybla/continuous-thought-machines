@@ -52,4 +52,6 @@ end_color_np = np.array(end_color).astype(np.float32) / 255
 # ------------------------------------------------------------------------------
 # Config
 
-actions_count = 30
+actions_count = 12
+max_segment_length = 4
+grid_size = 8
