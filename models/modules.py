@@ -690,3 +690,35 @@ class CustomRotationalEmbedding1D(nn.Module):
         pe = torch.repeat_interleave(pe.unsqueeze(0), x.size(0), 0)
         return pe.transpose(1, 2) # Transpose for compatibility with other backbones
     
+
+class HistoryGate(nn.Module):
+    """
+    Computes a retain gate for the pre-activation history of each neuron.
+    """
+    def __init__(self, d_model, memory_length):
+        super().__init__()
+        # Evaluates the current history to compute gate logits
+        self.history_proj = SuperLinear(
+            in_dims=memory_length, 
+            out_dims=memory_length, 
+            N=d_model
+        )
+        # Evaluates the incoming new state to influence the gate
+        self.state_proj = nn.Linear(d_model, memory_length)
+
+    def forward(self, state_trace, new_state):
+        # state_trace shape: (B, d_model, memory_length)
+        # new_state shape: (B, d_model)
+        
+        # Compute history contribution: (B, d_model, memory_length)
+        h_gate = self.history_proj(state_trace)
+        
+        # Compute new state contribution: (B, d_model, memory_length)
+        # We use an unsqueeze to broadcast across the d_model dimension properly
+        s_gate = self.state_proj(new_state).unsqueeze(1)
+        
+        # Combine and apply sigmoid to bound between 0 (replace) and 1 (retain)
+        gate = torch.sigmoid(h_gate + s_gate)
+        return gate
+
+
