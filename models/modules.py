@@ -703,8 +703,14 @@ class HistoryGate(nn.Module):
             out_dims=memory_length, 
             N=d_model
         )
+        
         # Evaluates the incoming new state to influence the gate
         self.state_proj = nn.Linear(d_model, memory_length)
+
+        # Initialize the state_proj bias to a positive value (e.g., 1.0 or 2.0)
+        # A bias of 1.0 means the sigmoid starts at ~0.73. 
+        # A bias of 2.0 means the sigmoid starts at ~0.88.
+        nn.init.constant_(self.state_proj.bias, 1.0)
 
     def forward(self, state_trace, new_state):
         # state_trace shape: (B, d_model, memory_length)
